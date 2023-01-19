@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 import csv
 
 INPUT_FILE = "input.csv"
+DEADLETTER_QUEUE = "deadletter.csv"
 OUTPUT_LOG_FILE = "log.txt"
 OUTPUT_CSV = "output.csv"
 
@@ -57,62 +58,68 @@ addresses = [
 
 async def lookup_icard(house_num, street, borough):
     async with aiohttp.ClientSession() as session:
-        p1 = p1_options[borough]
-        p3 = street.replace(" ", "+")
-        async with session.get(f"https://hpdonline.hpdnyc.org/HPDonline/provide_address.aspx?subject=&env_report=REMOTE_HOST%2CHTTP_ADDR%2CHTTP_USER_AGENT&bgcolor=%23FFFFFF&required=p2&p1={p1}&p2={house_num}&p3={p3}") as response:
-            html = await response.text()
+        try:
+            p1 = p1_options[borough]
+            p3 = street.replace(" ", "+")
+            async with session.get(f"https://hpdonline.hpdnyc.org/HPDonline/provide_address.aspx?subject=&env_report=REMOTE_HOST%2CHTTP_ADDR%2CHTTP_USER_AGENT&bgcolor=%23FFFFFF&required=p2&p1={p1}&p2={house_num}&p3={p3}") as response:
+                html = await response.text()
 
-        soup = BeautifulSoup(html, 'html.parser')
-        forms = soup.find_all('form')
+            soup = BeautifulSoup(html, 'html.parser')
+            forms = soup.find_all('form')
 
-        if not len(forms):
-            raise AssertionError("No forms found")
-        if len(forms) > 1:
-            print('WARNING: more than 1 form found')
+            if not len(forms):
+                raise AssertionError("No forms found")
+            if len(forms) > 1:
+                print('WARNING: more than 1 form found')
 
-        inputs = forms[0].find_all('input')
+            inputs = forms[0].find_all('input')
 
-        form_data = aiohttp.FormData()
-        for input in inputs:
-            form_data.add_field(input.get('name'), input.get('value', ''))
+            form_data = aiohttp.FormData()
+            for input in inputs:
+                form_data.add_field(input.get('name'), input.get('value', ''))
 
-        # simulate clicking on the I-form link
-        form_data.add_field("__EVENTTARGET", "lbtnIcard")
-        form_data.add_field("__EVENTARGUMENT", "")
+            # simulate clicking on the I-form link
+            form_data.add_field("__EVENTTARGET", "lbtnIcard")
+            form_data.add_field("__EVENTARGUMENT", "")
 
-        async with session.post("https://hpdonline.hpdnyc.org/HPDonline/select_application.aspx", data=form_data) as icard_response:
-            icard_html = await icard_response.text()
-        s = BeautifulSoup(icard_html, 'html.parser')
+            async with session.post("https://hpdonline.hpdnyc.org/HPDonline/select_application.aspx", data=form_data) as icard_response:
+                icard_html = await icard_response.text()
+            s = BeautifulSoup(icard_html, 'html.parser')
 
-        i_card_table = s.find(id="dgImages")
+            i_card_table = s.find(id="dgImages")
 
-        batched_log = f"\n\n### {house_num} {street} {borough} ###"
-        result = "None"
+            batched_log = f"\n\n### {house_num} {street} {borough} ###"
+            result = "None"
 
-        if i_card_table is None:
-            message += f"\nNo iCards found for {house_num} {street}"
-            print(message)
-            batched_log += message
-        else:
-            batched_log += '\n' + str(i_card_table)
-            rows = i_card_table.find_all("tr")
-            if len(rows) <= 1:
-                message = f"No iCards found for {house_num} {street}"
+            if i_card_table is None:
+                message = f"\nNo iCards found for {house_num} {street}"
+                print(message)
+                batched_log += message
+            else:
+                batched_log += '\n' + str(i_card_table)
+                rows = i_card_table.find_all("tr")
+                if len(rows) <= 1:
+                    message = f"No iCards found for {house_num} {street}"
+                    print(message)
+                    batched_log += "\n" + message
+                cards = []
+                for row in rows[1:]:
+                    cards += [row.find_all('td')[2].span.text]
+                result = ", ".join(cards)
+                message = f"iCards found for {house_num} {street}: {result}"
                 print(message)
                 batched_log += "\n" + message
-            cards = []
-            for row in rows[1:]:
-                cards += [row.find_all('td')[2].span.text]
-            result = ", ".join(cards)
-            message = f"iCards found for {house_num} {street}: {result}"
-            print(message)
-            batched_log += "\n" + message
 
-        with open(OUTPUT_LOG_FILE, "a") as f:
-            f.write(batched_log)
-        with open(OUTPUT_CSV, "a") as f:
-            writer = csv.writer(f)
-            writer.writerow([house_num, street, borough, result])
+            with open(OUTPUT_LOG_FILE, "a") as f:
+                f.write(batched_log)
+            with open(OUTPUT_CSV, "a") as f:
+                writer = csv.writer(f)
+                writer.writerow([house_num, street, borough, result])
+        except Exception as e:
+            # maintain a deadletter queue for errored rows
+            with open(DEADLETTER_QUEUE, "a") as f:
+                writer = csv.writer(f)
+                writer.writerow([house_num, street, borough, e])
 
 async def main():
     input = parse_input()
@@ -124,6 +131,7 @@ async def main():
             queue.append(job)
         else:
             print(f"Skipping {house_num} {street}, {borough} from cache")
-    await asyncio.gather(*queue, return_exceptions=True)
+    results = await asyncio.gather(*queue, return_exceptions=True)
+    print(results)
 
 asyncio.run(main())
