@@ -7,6 +7,17 @@ INPUT_FILE = "input.csv"
 OUTPUT_LOG_FILE = "log.txt"
 OUTPUT_CSV = "output.csv"
 
+# allow jobs to be resumed if they fail
+visited = set()
+try:
+    with open(OUTPUT_CSV) as cache:
+        print(f"Found an existing {OUTPUT_CSV} file. Resuming job...")
+        reader = csv.reader(cache)
+        for (house_num, street, borough, result) in reader:
+            visited.add((house_num, street, borough))
+except:
+    print(f"No existing {OUTPUT_CSV} found, so starting from scratch...")
+
 p1_options = {
     "MN": 1,
     "BX": 2,
@@ -101,15 +112,18 @@ async def lookup_icard(house_num, street, borough):
             f.write(batched_log)
         with open(OUTPUT_CSV, "a") as f:
             writer = csv.writer(f)
-            writer.writerow([borough, house_num, street, result])
+            writer.writerow([house_num, street, borough, result])
 
 async def main():
     input = parse_input()
     input = input[:5]
     queue = []
     for (house_num, street, borough) in input:
-        job = asyncio.create_task(lookup_icard(house_num, street, borough))
-        queue.append(job)
+        if (house_num, street, borough) not in visited:
+            job = asyncio.create_task(lookup_icard(house_num, street, borough))
+            queue.append(job)
+        else:
+            print(f"Skipping {house_num} {street}, {borough} from cache")
     await asyncio.gather(*queue, return_exceptions=True)
 
 asyncio.run(main())
