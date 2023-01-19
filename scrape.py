@@ -3,13 +3,14 @@ import asyncio
 from bs4 import BeautifulSoup
 
 addresses = [
-    ("270", "west+73"),
+    ("270", "west 73"),
 ]
 
 async def main():
     for (house_num, street) in addresses:
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"https://hpdonline.hpdnyc.org/HPDonline/provide_address.aspx?subject=&env_report=REMOTE_HOST%2CHTTP_ADDR%2CHTTP_USER_AGENT&bgcolor=%23FFFFFF&required=p2&p1=1&p2={house_num}&p3={street}") as response:
+            formatted_street = street.replace(" ", "+")
+            async with session.get(f"https://hpdonline.hpdnyc.org/HPDonline/provide_address.aspx?subject=&env_report=REMOTE_HOST%2CHTTP_ADDR%2CHTTP_USER_AGENT&bgcolor=%23FFFFFF&required=p2&p1=1&p2={house_num}&p3={formatted_street}") as response:
                 html = await response.text()
 
             soup = BeautifulSoup(html, 'html.parser')
@@ -36,13 +37,28 @@ async def main():
 
             i_card_table = s.find(id="dgImages")
 
+            batched_write = f"### {house_num} {street} ###"
+
             if i_card_table is None:
-                print(f"No iCards found for {house_num} {street}")
+                message += f"\nNo iCards found for {house_num} {street}"
+                print(message)
+                batched_write += message
             else:
-                print(i_card_table)
+                batched_write += '\n' + str(i_card_table)
                 rows = i_card_table.find_all("tr")
-                if len(rows) > 1:
-                    print(f"iCards found for {house_num} {street}")
+                if len(rows) <= 1:
+                    message = f"No iCards found for {house_num} {street}"
+                    print(message)
+                    batched_write += "\n" + message
+                cards = []
+                for row in rows[1:]:
+                    cards += [row.find_all('td')[2].span.text]
+                message = f"iCards found for {house_num} {street}: {', '.join(cards)}"
+                print(message)
+                batched_write += "\n" + message
+
+            with open("output.txt", "a") as f:
+                f.write(batched_write)
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(main())
