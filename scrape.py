@@ -45,15 +45,15 @@ def parse_input():
             borough = row[0]
             if not p1_options[borough]:
                 raise AssertionError(f"Found unexpected borough: {borough}")
-            raw_address = row[3]
-            [house_num, *street_chunks] = raw_address.split(" ")
-            street = " ".join(street_chunks)
-            output.append((house_num, street, borough))
+            house_num = row[1]
+            street = row[2]
+            extra_info = row[3:]
+            output.append((house_num, street, borough, extra_info))
 
     return output
 
 
-async def lookup_icard(house_num, street, borough):
+async def lookup_icard(house_num, street, borough, extra_info):
     async with aiohttp.ClientSession() as session:
         try:
             p1 = p1_options[borough]
@@ -111,20 +111,20 @@ async def lookup_icard(house_num, street, borough):
                 f.write(batched_log)
             with open(OUTPUT_CSV, "a") as f:
                 writer = csv.writer(f)
-                writer.writerow([house_num, street, borough, result])
+                writer.writerow([house_num, street, borough] + extra_info + [result])
         except Exception as e:
             # maintain a deadletter queue for errored rows
             with open(DEADLETTER_QUEUE, "a") as f:
                 writer = csv.writer(f)
-                writer.writerow([house_num, street, borough, e])
+                writer.writerow([house_num, street, borough] + extra_info + [e])
 
 
 async def consume(queue, worker_number):
     """Continually grab addresses and lookup icards"""
     while True:
-        (house_num, street, borough) = await queue.get()
+        (house_num, street, borough, extra_info) = await queue.get()
         print(f"[worker-{worker_number}]: Looking up icards for {house_num} {street}, {borough}")
-        await lookup_icard(house_num, street, borough)
+        await lookup_icard(house_num, street, borough, extra_info)
         queue.task_done()
 
 
@@ -134,9 +134,9 @@ async def main():
     queue = asyncio.Queue()
 
     # fill the queue with all items not already found
-    for (house_num, street, borough) in input:
+    for (house_num, street, borough, extra_info) in input:
         if (house_num, street, borough) not in visited:
-            queue.put_nowait((house_num, street, borough))
+            queue.put_nowait((house_num, street, borough, extra_info))
         else:
             print(f"Skipping {house_num} {street}, {borough} from cache")
 
