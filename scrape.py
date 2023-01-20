@@ -130,7 +130,6 @@ async def consume(queue, worker_number):
 
 async def main():
     input = parse_input()
-    input = input[:100]
     queue = asyncio.Queue()
 
     # fill the queue with all items not already found
