@@ -8,6 +8,9 @@ DEADLETTER_QUEUE = "deadletter.csv"
 OUTPUT_LOG_FILE = "log.txt"
 OUTPUT_CSV = "output.csv"
 
+# how many addresses to look up at a time
+BATCH_SIZE = 10
+
 # allow jobs to be resumed if they fail
 visited = set()
 try:
@@ -26,6 +29,7 @@ p1_options = {
     "QN": 4,
     "SI": 5,
 }
+
 
 def parse_input():
     """Parse input into rows of (house_num, street, borough)"""
@@ -48,13 +52,6 @@ def parse_input():
 
     return output
 
-addresses = [
-    ("270", "west 73", "manhattan"),
-    ("271", "west 73", "manhattan"),
-    ("272", "west 73", "manhattan"),
-    ("150", "east 89 street", "manhattan"),
-    ("13-75", "209 street", "queens"),
-]
 
 async def lookup_icard(house_num, street, borough):
     async with aiohttp.ClientSession() as session:
@@ -121,17 +118,36 @@ async def lookup_icard(house_num, street, borough):
                 writer = csv.writer(f)
                 writer.writerow([house_num, street, borough, e])
 
+
+async def consume(queue, worker_number):
+    """Continually grab addresses and lookup icards"""
+    while True:
+        (house_num, street, borough) = await queue.get()
+        print(f"[worker-{worker_number}]: Looking up icards for {house_num} {street}, {borough}")
+        await lookup_icard(house_num, street, borough)
+        queue.task_done()
+
+
 async def main():
     input = parse_input()
-    input = input[:5]
-    queue = []
+    input = input[:100]
+    queue = asyncio.Queue()
+
+    # fill the queue with all items not already found
     for (house_num, street, borough) in input:
         if (house_num, street, borough) not in visited:
-            job = asyncio.create_task(lookup_icard(house_num, street, borough))
-            queue.append(job)
+            queue.put_nowait((house_num, street, borough))
         else:
             print(f"Skipping {house_num} {street}, {borough} from cache")
-    results = await asyncio.gather(*queue, return_exceptions=True)
-    print(results)
+
+    print(f"Loaded {queue.qsize()} addresses into the queue")
+
+    # only lookup BATCH_SIZE at a time
+    consumers = [asyncio.create_task(consume(queue, i+1)) for i in range(BATCH_SIZE)]
+
+    await queue.join()
+
+    for consumer in consumers:
+        consumer.cancel()
 
 asyncio.run(main())
