@@ -14,13 +14,14 @@ BATCH_SIZE = 10
 # allow jobs to be resumed if they fail
 visited = set()
 try:
-    with open(OUTPUT_CSV) as cache:
-        print(f"Found an existing {OUTPUT_CSV} file. Resuming job...")
-        reader = csv.reader(cache)
-        for (house_num, street, borough, result) in reader:
-            visited.add((house_num, street, borough))
+    for file in [OUTPUT_CSV, DEADLETTER_QUEUE]:
+        with open(file) as cache:
+            print(f"Found an existing {file} file. Resuming job...")
+            reader = csv.reader(cache)
+            for (house_num, street, borough, *rest) in reader:
+                visited.add((house_num, street, borough))
 except:
-    print(f"No existing {OUTPUT_CSV} found, so starting from scratch...")
+    print(f"No existing output files found, so starting from scratch...")
 
 p1_options = {
     "MN": 1,
