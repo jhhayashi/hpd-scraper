@@ -3,25 +3,46 @@ import asyncio
 from bs4 import BeautifulSoup
 import csv
 
+# the input file expects the first three rows to be borough, house_nun, and street.
+# any additional columns won't be used, but will be copied into the output csv.
+# the first row is assumed to be a header and will be skipped
 INPUT_FILE = "input.csv"
+
+# the deadletter queue stores errored rows. including the deadletter queue in
+# the SKIP_LIST below will cause anything in the deadletter queue to be skipped.
+# this is helpful if errored data should not be retried.
+#
+# additional runs will keep appending to this file, so it's possible for it to
+# contain duplicates
 DEADLETTER_QUEUE = "deadletter.csv"
+
+# the log file contains the html table of the icards, in case it's helpful
 OUTPUT_LOG_FILE = "log.txt"
+
+# the output file mirrors the shape of the input file, but with an additional
+# column for the result
 OUTPUT_CSV = "output.csv"
 
 # how many addresses to look up at a time
-BATCH_SIZE = 10
+BATCH_SIZE = 3
+
+# which entries to skip. remove deadletter queue from this list to rerun errored rows
+SKIP_LIST = [OUTPUT_CSV, DEADLETTER_QUEUE]
 
 # allow jobs to be resumed if they fail
 visited = set()
-try:
-    for file in [OUTPUT_CSV, DEADLETTER_QUEUE]:
+for file in SKIP_LIST:
+    print(f"Checking for a {file} file to resume progress")
+    try:
         with open(file) as cache:
-            print(f"Found an existing {file} file. Resuming job...")
+            print(f"Found an existing {file} file. Loading into cache...")
             reader = csv.reader(cache)
             for (house_num, street, borough, *rest) in reader:
                 visited.add((house_num, street, borough))
-except:
-    print(f"No existing output files found, so starting from scratch...")
+    except IOError:
+        print(f"No existing {file} found")
+
+print(f"Loaded {len(visited)} addresses into cache")
 
 p1_options = {
     "MN": 1,
@@ -53,6 +74,17 @@ def parse_input():
 
     return output
 
+
+async def lookup_by_block(block, lot, borough, extra_info):
+    async with aiohttp.ClientSession() as session:
+        b = p1_options[borough]
+        form_data = aiohttp.FormData()
+        form_data.add_field("txtBlockNo", block)
+        form_data.add_field("txtLotNo", lot)
+        form_data.add_field("ddlBoro", borough)
+
+        async with session.post(f"https://hpdonline.hpdnyc.org/HPDonline/provide_address.aspx?txtBlockNo={block}&txtLotNo={lot}&ddlBoro={b}") as response:
+            html = await response.text()
 
 async def lookup_icard(house_num, street, borough, extra_info):
     async with aiohttp.ClientSession() as session:
@@ -138,7 +170,8 @@ async def main():
         if (house_num, street, borough) not in visited:
             queue.put_nowait((house_num, street, borough, extra_info))
         else:
-            print(f"Skipping {house_num} {street}, {borough} from cache")
+            pass
+            # print(f"Skipping {house_num} {street}, {borough} from cache")
 
     print(f"Loaded {queue.qsize()} addresses into the queue")
 
