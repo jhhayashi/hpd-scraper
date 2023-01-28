@@ -2,11 +2,12 @@ import aiohttp
 import asyncio
 from bs4 import BeautifulSoup
 import csv
+import os
 
 # the input file expects the first three rows to be borough, house_nun, and street.
 # any additional columns won't be used, but will be copied into the output csv.
 # the first row is assumed to be a header and will be skipped
-INPUT_FILE = "input.csv"
+INPUT_FILE = os.getenv("INPUT_FILE")
 
 # the deadletter queue stores errored rows. including the deadletter queue in
 # the SKIP_LIST below will cause anything in the deadletter queue to be skipped.
@@ -14,20 +15,37 @@ INPUT_FILE = "input.csv"
 #
 # additional runs will keep appending to this file, so it's possible for it to
 # contain duplicates
-DEADLETTER_QUEUE = "deadletter.csv"
+DEADLETTER_QUEUE = os.getenv("DEADLETTER_QUEUE")
 
 # the log file contains the html table of the icards, in case it's helpful
-OUTPUT_LOG_FILE = "log.txt"
+OUTPUT_LOG_FILE = os.getenv("OUTPUT_LOG_FILE")
 
 # the output file mirrors the shape of the input file, but with an additional
 # column for the result
-OUTPUT_CSV = "output.csv"
+OUTPUT_CSV = os.getenv("OUTPUT_CSV")
 
 # how many addresses to look up at a time
-BATCH_SIZE = 3
+BATCH_SIZE = int(os.getenv("BATCH_SIZE"))
 
-# which entries to skip. remove deadletter queue from this list to rerun errored rows
-SKIP_LIST = [OUTPUT_CSV, DEADLETTER_QUEUE]
+# which entries to skip
+SKIP_LIST = []
+rerun_output = os.getenv("RERUN_OUTPUT_ENTRIES") not in {"false", "f", "0"}
+if not rerun_output:
+    SKIP_LIST.append(OUTPUT_CSV)
+rerun_deadletter = os.getenv("RERUN_DEADLETTER_ENTRIES") not in {"false", "f", "0"}
+if not rerun_deadletter:
+    SKIP_LIST.append(DEADLETTER_QUEUE)
+
+print(f"""
+Running with config:
+INPUT_FILE: {INPUT_FILE}
+DEADLETTER_QUEUE: {DEADLETTER_QUEUE}
+OUTPUT_LOG_FILE: {OUTPUT_LOG_FILE}
+OUTPUT_CSV: {OUTPUT_CSV}
+BATCH_SIZE: {BATCH_SIZE}
+RERUN_OUTPUT_ENTRIES: {rerun_output}
+RERUN_DEADLETTER_ENTRIES: {rerun_deadletter}
+""")
 
 # allow jobs to be resumed if they fail
 visited = set()

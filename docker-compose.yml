@@ -3,5 +3,13 @@ services:
   hpd-scraper:
     build:
       context: .
+    environment:
+      - INPUT_FILE=${INPUT_FILE:-input.csv}
+      - DEADLETTER_QUEUE=${DEADLETTER_QUEUE:-deadletter.csv}
+      - OUTPUT_CSV=${OUTPUT_CSV:-output.csv}
+      - OUTPUT_LOG_FILE=${OUTPUT_LOG_FILE:-log.txt}
+      - BATCH_SIZE=${BATCH_SIZE:-3}
+      - RERUN_OUTPUT_ENTRIES=${RERUN_OUTPUT_ENTRIES:-false}
+      - RERUN_DEADLETTER_ENTRIES=${RERUN_DEADLETTER_ENTRIES:-true}
     volumes:
       - ./:/app
