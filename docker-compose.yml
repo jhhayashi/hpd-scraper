@@ -1,0 +1,7 @@
+version: '3.8'
+services:
+  hpd-scraper:
+    build:
+      context: .
+    volumes:
+      - ./:/app
