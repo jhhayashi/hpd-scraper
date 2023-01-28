@@ -9,5 +9,8 @@ columns should be borough, house number, and street name.
 First, install docker. Then run:
 
 ```bash
-docker compose up --build
+# build image and install dependencies
+docker compose build
+
+docker compose run hpd-scraper
 ```
