@@ -93,17 +93,6 @@ def parse_input():
     return output
 
 
-async def lookup_by_block(block, lot, borough, extra_info):
-    async with aiohttp.ClientSession() as session:
-        b = p1_options[borough]
-        form_data = aiohttp.FormData()
-        form_data.add_field("txtBlockNo", block)
-        form_data.add_field("txtLotNo", lot)
-        form_data.add_field("ddlBoro", borough)
-
-        async with session.post(f"https://hpdonline.hpdnyc.org/HPDonline/provide_address.aspx?txtBlockNo={block}&txtLotNo={lot}&ddlBoro={b}") as response:
-            html = await response.text()
-
 async def lookup_icard(house_num, street, borough, extra_info):
     async with aiohttp.ClientSession() as session:
         try:
@@ -201,4 +190,4 @@ async def main():
     for consumer in consumers:
         consumer.cancel()
 
-# asyncio.run(main())
+asyncio.run(main())
