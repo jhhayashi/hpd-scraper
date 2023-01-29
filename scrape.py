@@ -15,7 +15,9 @@ INPUT_FILE = os.getenv("INPUT_FILE") or "input.csv"
 #
 # additional runs will keep appending to this file, so it's possible for it to
 # contain duplicates
-DEADLETTER_QUEUE = os.getenv("DEADLETTER_QUEUE") or "deadletter.csv"
+#
+# if this configuration is omitted, failed tasks will be readded to the queue
+DEADLETTER_QUEUE = os.getenv("DEADLETTER_QUEUE")
 
 # the log file contains the html table of the icards, in case it's helpful
 OUTPUT_LOG_FILE = os.getenv("OUTPUT_LOG_FILE") or "log.txt"
@@ -95,68 +97,62 @@ def parse_input():
 
 async def lookup_icard(house_num, street, borough, extra_info):
     async with aiohttp.ClientSession() as session:
-        try:
-            p1 = p1_options[borough]
-            p3 = street.replace(" ", "+")
-            async with session.get(f"https://hpdonline.hpdnyc.org/HPDonline/provide_address.aspx?subject=&env_report=REMOTE_HOST%2CHTTP_ADDR%2CHTTP_USER_AGENT&bgcolor=%23FFFFFF&required=p2&p1={p1}&p2={house_num}&p3={p3}") as response:
-                html = await response.text()
+        p1 = p1_options[borough]
+        p3 = street.replace(" ", "+")
+        async with session.get(f"https://hpdonline.hpdnyc.org/HPDonline/provide_address.aspx?subject=&env_report=REMOTE_HOST%2CHTTP_ADDR%2CHTTP_USER_AGENT&bgcolor=%23FFFFFF&required=p2&p1={p1}&p2={house_num}&p3={p3}") as response:
+            html = await response.text()
 
-            soup = BeautifulSoup(html, 'html.parser')
-            forms = soup.find_all('form')
+        soup = BeautifulSoup(html, 'html.parser')
+        forms = soup.find_all('form')
 
-            if not len(forms):
-                raise AssertionError("No forms found")
-            if len(forms) > 1:
-                print('WARNING: more than 1 form found')
+        if not len(forms):
+            raise AssertionError("No forms found")
+        if len(forms) > 1:
+            print('WARNING: more than 1 form found')
 
-            inputs = forms[0].find_all('input')
+        inputs = forms[0].find_all('input')
 
-            form_data = aiohttp.FormData()
-            for input in inputs:
-                form_data.add_field(input.get('name'), input.get('value', ''))
+        form_data = aiohttp.FormData()
+        for input in inputs:
+            form_data.add_field(input.get('name'), input.get('value', ''))
 
-            # simulate clicking on the I-form link
-            form_data.add_field("__EVENTTARGET", "lbtnIcard")
-            form_data.add_field("__EVENTARGUMENT", "")
+        # simulate clicking on the I-form link
+        form_data.add_field("__EVENTTARGET", "lbtnIcard")
+        form_data.add_field("__EVENTARGUMENT", "")
 
-            async with session.post("https://hpdonline.hpdnyc.org/HPDonline/select_application.aspx", data=form_data) as icard_response:
-                icard_html = await icard_response.text()
-            s = BeautifulSoup(icard_html, 'html.parser')
+        async with session.post("https://hpdonline.hpdnyc.org/HPDonline/select_application.aspx", data=form_data) as icard_response:
+            icard_html = await icard_response.text()
+        s = BeautifulSoup(icard_html, 'html.parser')
 
-            i_card_table = s.find(id="dgImages")
+        i_card_table = s.find(id="dgImages")
 
-            batched_log = f"\n\n### {house_num} {street} {borough} ###"
-            result = "None"
+        batched_log = f"\n\n### {house_num} {street} {borough} ###"
+        result = "None"
 
-            if i_card_table is None:
-                message = f"\nNo iCards found for {house_num} {street}"
-                print(message)
-                batched_log += message
-            else:
-                batched_log += '\n' + str(i_card_table)
-                rows = i_card_table.find_all("tr")
-                if len(rows) <= 1:
-                    message = f"No iCards found for {house_num} {street}"
-                    print(message)
-                    batched_log += "\n" + message
-                cards = []
-                for row in rows[1:]:
-                    cards += [row.find_all('td')[2].span.text]
-                result = ", ".join(cards)
-                message = f"iCards found for {house_num} {street}: {result}"
+        if i_card_table is None:
+            message = f"\nNo iCards found for {house_num} {street}"
+            print(message)
+            batched_log += message
+        else:
+            batched_log += '\n' + str(i_card_table)
+            rows = i_card_table.find_all("tr")
+            if len(rows) <= 1:
+                message = f"No iCards found for {house_num} {street}"
                 print(message)
                 batched_log += "\n" + message
+            cards = []
+            for row in rows[1:]:
+                cards += [row.find_all('td')[2].span.text]
+            result = ", ".join(cards)
+            message = f"iCards found for {house_num} {street}: {result}"
+            print(message)
+            batched_log += "\n" + message
 
-            with open(OUTPUT_LOG_FILE, "a") as f:
-                f.write(batched_log)
-            with open(OUTPUT_CSV, "a") as f:
-                writer = csv.writer(f)
-                writer.writerow([house_num, street, borough] + extra_info + [result])
-        except Exception as e:
-            # maintain a deadletter queue for errored rows
-            with open(DEADLETTER_QUEUE, "a") as f:
-                writer = csv.writer(f)
-                writer.writerow([house_num, street, borough] + extra_info + [e])
+        with open(OUTPUT_LOG_FILE, "a") as f:
+            f.write(batched_log)
+        with open(OUTPUT_CSV, "a") as f:
+            writer = csv.writer(f)
+            writer.writerow([house_num, street, borough] + extra_info + [result])
 
 
 async def consume(queue, worker_number):
@@ -164,8 +160,22 @@ async def consume(queue, worker_number):
     while True:
         (house_num, street, borough, extra_info) = await queue.get()
         print(f"[worker-{worker_number}]: Looking up icards for {house_num} {street}, {borough}")
-        await lookup_icard(house_num, street, borough, extra_info)
-        queue.task_done()
+        try:
+            await lookup_icard(house_num, street, borough, extra_info)
+        except Exception as e:
+            if DEADLETTER_QUEUE:
+                print(f"Request failed for {house_num} {street}. Adding to {DEADLETTER_QUEUE}")
+                # maintain a deadletter queue for errored rows
+                with open(DEADLETTER_QUEUE, "a") as f:
+                    writer = csv.writer(f)
+                    writer.writerow([house_num, street, borough] + extra_info + [e])
+            else:
+                # move to end of queue so that the worker doesn't get stuck on bad data
+                print(f"Request failed for {house_num} {street}. Readding to queue")
+                queue.put_nowait((house_num, street, borough, extra_info))
+        finally:
+            queue.task_done()
+            print(f"{queue.qsize()} items left in queue")
 
 
 async def main():
