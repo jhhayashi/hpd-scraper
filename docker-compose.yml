@@ -5,7 +5,7 @@ services:
       context: .
     environment:
       - INPUT_CSV=${INPUT_CSV:-input.csv}
-      - DEADLETTER_QUEUE=${DEADLETTER_QUEUE:-deadletter.csv}
+      - DEADLETTER_QUEUE=$DEADLETTER_QUEUE
       - OUTPUT_CSV=${OUTPUT_CSV:-output.csv}
       - OUTPUT_LOG_FILE=${OUTPUT_LOG_FILE:-log.txt}
       - BATCH_SIZE=${BATCH_SIZE:-3}
