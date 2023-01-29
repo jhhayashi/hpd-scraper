@@ -7,7 +7,7 @@ import os
 # the input file expects the first three rows to be borough, house_nun, and street.
 # any additional columns won't be used, but will be copied into the output csv.
 # the first row is assumed to be a header and will be skipped
-INPUT_FILE = os.getenv("INPUT_FILE") or "input.csv"
+INPUT_CSV = os.getenv("INPUT_CSV") or "input.csv"
 
 # the deadletter queue stores errored rows. including the deadletter queue in
 # the SKIP_LIST below will cause anything in the deadletter queue to be skipped.
@@ -40,7 +40,7 @@ if not rerun_deadletter:
 
 print(f"""
 Running with config:
-INPUT_FILE: {INPUT_FILE}
+INPUT_CSV: {INPUT_CSV}
 DEADLETTER_QUEUE: {DEADLETTER_QUEUE}
 OUTPUT_LOG_FILE: {OUTPUT_LOG_FILE}
 OUTPUT_CSV: {OUTPUT_CSV}
@@ -77,7 +77,7 @@ def parse_input():
     """Parse input into rows of (house_num, street, borough)"""
     output = []
 
-    with open(INPUT_FILE) as input_csv:
+    with open(INPUT_CSV) as input_csv:
         reader = csv.reader(input_csv)
 
         # skip header

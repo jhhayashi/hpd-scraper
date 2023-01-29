@@ -4,7 +4,7 @@ services:
     build:
       context: .
     environment:
-      - INPUT_FILE=${INPUT_FILE:-input.csv}
+      - INPUT_CSV=${INPUT_CSV:-input.csv}
       - DEADLETTER_QUEUE=${DEADLETTER_QUEUE:-deadletter.csv}
       - OUTPUT_CSV=${OUTPUT_CSV:-output.csv}
       - OUTPUT_LOG_FILE=${OUTPUT_LOG_FILE:-log.txt}
